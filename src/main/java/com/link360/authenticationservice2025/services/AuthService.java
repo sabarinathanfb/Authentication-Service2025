@@ -1,26 +1,34 @@
 package com.link360.authenticationservice2025.services;
 
 
-import Exceptions.UserAlreadyExist;
-import Exceptions.UserNotExist;
-import Exceptions.WrongPasswordException;
+import com.link360.authenticationservice2025.Exceptions.UserAlreadyExist;
+import com.link360.authenticationservice2025.Exceptions.UserNotExist;
+import com.link360.authenticationservice2025.Exceptions.WrongPasswordException;
+import com.link360.authenticationservice2025.models.Session;
 import com.link360.authenticationservice2025.models.User;
+import com.link360.authenticationservice2025.repositories.SessionRepository;
 import com.link360.authenticationservice2025.repositories.UserRepository;
+import io.jsonwebtoken.*;
+import io.jsonwebtoken.security.Keys;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.util.Optional;
+
+import javax.crypto.SecretKey;
+import java.util.*;
 
 @Service
 public class AuthService {
 
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder bCryptPasswordEncoder;
+    private SecretKey key = Keys.secretKeyFor(SignatureAlgorithm.HS256);
+    private final SessionRepository sessionRepository;
 
-    public AuthService(UserRepository userRepository, BCryptPasswordEncoder bCryptPasswordEncoder) {
+    public AuthService(UserRepository userRepository, BCryptPasswordEncoder bCryptPasswordEncoder, SessionRepository sessionRepository) {
         this.userRepository = userRepository;
         this.bCryptPasswordEncoder = bCryptPasswordEncoder;
+        this.sessionRepository = sessionRepository;
     }
 
 
@@ -51,10 +59,63 @@ public class AuthService {
         );
 
         if (matches) {
-            return "token";
+            String token =  createJwtToken(
+                    user.get().getId(),
+                    new ArrayList<>(),
+                    user.get().getEmail()
+            );
+
+            Session session = new Session();
+            session.setToken(token);
+            session.setUser(user.get());
+
+            Calendar calendar = Calendar.getInstance();
+            Date now = calendar.getTime();
+            calendar.add(Calendar.DAY_OF_MONTH, 30);
+            Date expiration = calendar.getTime();
+
+            session.setExpiringAt(expiration);
+
+            sessionRepository.save(session);
+            return token;
         }else {
             throw  new WrongPasswordException("Wrong Password");
         }
 
+
+
+    }
+
+    public boolean validate(String token) {
+        try {
+            Jws<Claims> claims = Jwts.parserBuilder()
+                    .setSigningKey(key)
+                    .build()
+                    .parseClaimsJws(token);
+            return true;
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+
+    private String createJwtToken(Long userId, List<String> roles,String email) {
+        Map<String,Object> map = new HashMap<>();
+        map.put("userId", userId);
+        map.put("roles", roles);
+        map.put("email", email);
+
+        Calendar calendar = Calendar.getInstance();
+        Date now = calendar.getTime();
+        calendar.add(Calendar.DAY_OF_MONTH, 30);
+        Date expiration = calendar.getTime();
+
+        String token = Jwts.builder()
+                .setClaims(map)
+                .setIssuedAt(now)
+                .setExpiration(expiration)
+                .signWith(key).compact();
+
+        return token;
     }
 }

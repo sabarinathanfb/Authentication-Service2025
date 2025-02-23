@@ -1,7 +1,6 @@
 package com.link360.authenticationservice2025.controller;
 
 
-import Exceptions.WrongPasswordException;
 import com.link360.authenticationservice2025.dtos.*;
 import com.link360.authenticationservice2025.services.AuthService;
 import org.springframework.http.HttpStatus;
@@ -77,5 +76,11 @@ public class AuthController {
 
         }
 
+    }
+
+    @GetMapping("/validate")
+    public boolean validateToken(@RequestParam("token") String token) {
+
+        return authService.validate(token);
     }
 }
