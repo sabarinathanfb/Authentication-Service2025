@@ -83,4 +83,15 @@ public class AuthController {
 
         return authService.validate(token);
     }
+
+    @PostMapping("/logout")
+    public ResponseEntity<String> logout(@RequestParam("token") String token) {
+        boolean isLoggedOut = authService.logout(token);
+
+        if (isLoggedOut) {
+            return ResponseEntity.ok("Logged out successfully");
+        } else {
+            return ResponseEntity.badRequest().body("Invalid or expired token");
+        }
+    }
 }

@@ -5,6 +5,7 @@ import com.link360.authenticationservice2025.Exceptions.UserAlreadyExist;
 import com.link360.authenticationservice2025.Exceptions.UserNotExist;
 import com.link360.authenticationservice2025.Exceptions.WrongPasswordException;
 import com.link360.authenticationservice2025.models.Session;
+import com.link360.authenticationservice2025.models.SessionStatus;
 import com.link360.authenticationservice2025.models.User;
 import com.link360.authenticationservice2025.repositories.SessionRepository;
 import com.link360.authenticationservice2025.repositories.UserRepository;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 
 import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
@@ -22,7 +24,9 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder bCryptPasswordEncoder;
-    private SecretKey key = Keys.secretKeyFor(SignatureAlgorithm.HS256);
+//    private SecretKey key = Keys.secretKeyFor(SignatureAlgorithm.HS256);
+    private final SecretKey key = Keys.hmacShaKeyFor(
+            "thisisownserveruserserviceimplementation".getBytes(StandardCharsets.UTF_8));
     private final SessionRepository sessionRepository;
 
     public AuthService(UserRepository userRepository, BCryptPasswordEncoder bCryptPasswordEncoder, SessionRepository sessionRepository) {
@@ -68,6 +72,7 @@ public class AuthService {
             Session session = new Session();
             session.setToken(token);
             session.setUser(user.get());
+            session.setSessionStatus(SessionStatus.ACTIVE);
 
             Calendar calendar = Calendar.getInstance();
             Date now = calendar.getTime();
@@ -92,11 +97,52 @@ public class AuthService {
                     .setSigningKey(key)
                     .build()
                     .parseClaimsJws(token);
-            return true;
+
+            // Check expiration
+            Date expiryAt = claims.getBody().getExpiration();
+
+            return !expiryAt.before(new Date()); // Token expired
+
         } catch (JwtException | IllegalArgumentException e) {
-            return false;
+            return false; // Invalid token
         }
     }
+
+
+    public boolean logout(String token) {
+        if (!validate(token)) {
+            return false; // Token is invalid
+        }
+        Long userId = extractUserIdFromToken(token);
+
+        Optional<Session> sessionOpt = sessionRepository.findByUserId(userId);
+        if (sessionOpt.isPresent() && sessionOpt.get().getSessionStatus() == SessionStatus.ACTIVE) {
+            Session session = sessionOpt.get();
+
+
+            session.setSessionStatus(SessionStatus.LOGGED_OUT);
+            sessionRepository.save(session);
+            return true;
+        }
+
+        return false; // Session not found
+    }
+
+    public Long extractUserIdFromToken(String token) {
+        try {
+            Claims claims = Jwts.parserBuilder()
+                    .setSigningKey(key)
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+
+            return claims.get("userId", Long.class); // Assuming you store userId in claims
+        } catch (JwtException | IllegalArgumentException e) {
+            return null; // Handle invalid token
+        }
+    }
+
+
 
 
     private String createJwtToken(Long userId, List<String> roles,String email) {
